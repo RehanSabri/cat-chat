@@ -58,8 +58,8 @@ export default function LandingPage() {
         <ul className="s-nav-links">
           <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('text'); }}>Text Chat</a></li>
           <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('video'); }}>Video Chat</a></li>
-          <li><a href="#">Safety</a></li>
-          <li><a href="#">About</a></li>
+          <li><Link to="/safety">Safety</Link></li>
+          <li><Link to="/about">About</Link></li>
         </ul>
         <div className="s-nav-right">
           <div className="s-nav-pill">
@@ -230,7 +230,7 @@ export default function LandingPage() {
         <ul className="s-footer-links">
           <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('text'); }}>Text Chat</a></li>
           <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('video'); }}>Video Chat</a></li>
-          <li><a href="#">Safety</a></li>
+          <li><Link to="/safety">Safety</Link></li>
           <li><Link to="/privacy">Privacy Policy</Link></li>
           <li><Link to="/terms">Terms</Link></li>
         </ul>

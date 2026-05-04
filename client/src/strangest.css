@@ -1375,3 +1375,213 @@
   color: rgba(255,107,107,0.8);
   max-width: 220px;
 }
+
+/* ══════════════════════════════════════════════
+   MOBILE RESPONSIVE  (≤ 768 px)
+   ══════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+
+  /* ── Root: allow scrolling on very small screens ── */
+  .sc-root {
+    height: 100dvh;          /* dynamic viewport height (handles mobile browser bars) */
+    overflow: hidden;
+  }
+
+  /* ── Topbar ── */
+  .sc-topbar {
+    height: 48px;
+    padding: 0 1rem;
+  }
+  .sc-topbar-center {
+    padding: 4px 10px;
+    gap: 6px;
+  }
+  .sc-topbar-status {
+    font-size: 0.75rem;
+  }
+  .sc-online-count {
+    display: none;          /* hide "X online" on small screens – saves space */
+  }
+
+  /* ── TEXT CHAT: hide sidebar, go full-width ── */
+  .sc-layout {
+    flex-direction: column;
+  }
+  .sc-sidebar {
+    display: none;          /* collapse sidebar entirely on mobile */
+  }
+
+  /* ── Messages ── */
+  .sc-messages-wrap {
+    padding: 1rem;
+    gap: 10px;
+  }
+  .sc-msg-group {
+    max-width: 82%;         /* bubbles can be wider on narrow screens */
+  }
+
+  /* ── Input bar ── */
+  .sc-input-bar {
+    padding: 0.65rem 0.75rem;
+    gap: 8px;
+  }
+  .sc-emoji-btn {
+    width: 34px;
+    height: 34px;
+    font-size: 1rem;
+  }
+  .sc-send-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* ── Action bar ── */
+  .sc-action-bar {
+    height: 52px;
+    padding: 0 0.75rem;
+    gap: 8px;
+  }
+  .sc-btn {
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    gap: 5px;
+  }
+
+  /* ── VIDEO CHAT: stack videos on top, chat below ── */
+  .sc-video-layout {
+    flex-direction: column;
+  }
+
+  /* Video column becomes a horizontal row of two feeds */
+  .sc-video-col {
+    width: 100%;
+    flex-shrink: 0;
+    height: 42vw;           /* ~42% of viewport width = decent aspect ratio */
+    flex-direction: row;    /* remote | local side-by-side */
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* Each video cell takes half the row */
+  .sc-video-cell {
+    flex: 1;
+  }
+
+  /* Separator between remote and local in horizontal layout */
+  .sc-video-remote {
+    border-bottom: none;
+    border-right: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* Camera/mic controls – move to bottom-right corner on mobile */
+  .sc-video-controls {
+    bottom: 8px;
+    left: auto;
+    right: 8px;
+    gap: 6px;
+  }
+  .sc-vid-ctrl-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  /* Chat area fills the remaining space below the video row */
+  .sc-chat-area {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Connecting screen ── */
+  .sc-connecting {
+    gap: 1.2rem;
+  }
+
+  /* ── Disconnected overlay card ── */
+  .sc-disc-card {
+    padding: 1.5rem;
+    max-width: 290px;
+  }
+  .sc-disc-actions {
+    flex-direction: column;
+  }
+
+  /* ── Report modal ── */
+  .sc-report-card {
+    padding: 1.25rem;
+    max-width: 340px;
+  }
+  .sc-report-actions {
+    flex-direction: column;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   EXTRA SMALL  (≤ 480 px)
+   ══════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+
+  /* Even tighter topbar */
+  .sc-topbar {
+    height: 44px;
+    padding: 0 0.75rem;
+  }
+  .sc-logo {
+    font-size: 1rem;
+  }
+
+  /* Taller video strip on portrait phones */
+  .sc-video-col {
+    height: 48vw;
+  }
+
+  /* Bubbles almost full-width */
+  .sc-msg-group {
+    max-width: 88%;
+  }
+
+  /* Tighter messages padding */
+  .sc-messages-wrap {
+    padding: 0.75rem;
+  }
+
+  /* Smaller bubble text */
+  .sc-bubble {
+    font-size: 0.88rem;
+    padding: 9px 12px;
+  }
+
+  /* Action buttons: shrink labels */
+  .sc-btn {
+    padding: 7px 12px;
+    font-size: 0.78rem;
+  }
+
+  /* Input bar */
+  .sc-input-bar {
+    padding: 0.5rem 0.6rem;
+    gap: 6px;
+  }
+
+  /* Hide emoji button on tiny screens to save space */
+  .sc-emoji-btn {
+    display: none;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   SAFE AREA INSETS (notched / gesture-bar phones)
+   ══════════════════════════════════════════════ */
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .sc-action-bar {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+    height: auto;
+    min-height: 52px;
+  }
+  .sc-input-bar {
+    padding-bottom: calc(0.65rem + env(safe-area-inset-bottom));
+  }
+}
+
