@@ -18,7 +18,7 @@ if (turnUrl && turnUser && turnPass) {
   });
 }
 
-export default function useWebRTC(socket, roomId, isInitiator, mode) {
+export default function useWebRTC(socket, roomId, isInitiatorValue, mode) {
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [cameraEnabled, setCameraEnabled] = useState(true);
@@ -29,6 +29,9 @@ export default function useWebRTC(socket, roomId, isInitiator, mode) {
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const isCleanedUpRef = useRef(false);
+  const isInitiatorRef = useRef(isInitiatorValue);
+  const iceCandidateQueueRef = useRef([]); // buffer candidates before remote description is set
+  const remoteDescSetRef = useRef(false);  // tracks whether remote description has been applied
 
   const cleanup = useCallback(() => {
     if (isCleanedUpRef.current) return;
@@ -71,10 +74,17 @@ export default function useWebRTC(socket, roomId, isInitiator, mode) {
     }
   }, []);
 
+  // Keep isInitiatorRef in sync with whatever value is passed in
+  useEffect(() => {
+    isInitiatorRef.current = isInitiatorValue;
+  }, [isInitiatorValue]);
+
   useEffect(() => {
     if (!socket || !roomId || mode !== 'video') return;
 
     isCleanedUpRef.current = false;
+    iceCandidateQueueRef.current = [];
+    remoteDescSetRef.current = false;
     let isMounted = true;
 
     async function initWebRTC() {
@@ -128,7 +138,7 @@ export default function useWebRTC(socket, roomId, isInitiator, mode) {
         };
 
         // If initiator, create and send offer
-        if (isInitiator) {
+        if (isInitiatorRef.current) {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           socket.emit('webrtc_offer', { offer: pc.localDescription });
@@ -153,6 +163,18 @@ export default function useWebRTC(socket, roomId, isInitiator, mode) {
       if (!pc) return;
 
       pc.setRemoteDescription(new RTCSessionDescription(offer))
+        .then(() => {
+          remoteDescSetRef.current = true;
+          // Drain any queued ICE candidates that arrived before this
+          const queue = iceCandidateQueueRef.current.splice(0);
+          return Promise.all(
+            queue.map((c) =>
+              pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) =>
+                console.error('[WebRTC] Queued ICE candidate error:', e)
+              )
+            )
+          );
+        })
         .then(() => pc.createAnswer())
         .then((answer) => pc.setLocalDescription(answer))
         .then(() => {
@@ -165,14 +187,31 @@ export default function useWebRTC(socket, roomId, isInitiator, mode) {
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
-      pc.setRemoteDescription(new RTCSessionDescription(answer)).catch((err) =>
-        console.error('[WebRTC] Answer handling error:', err)
-      );
+      pc.setRemoteDescription(new RTCSessionDescription(answer))
+        .then(() => {
+          remoteDescSetRef.current = true;
+          // Drain any queued ICE candidates that arrived before this
+          const queue = iceCandidateQueueRef.current.splice(0);
+          return Promise.all(
+            queue.map((c) =>
+              pc.addIceCandidate(new RTCIceCandidate(c)).catch((e) =>
+                console.error('[WebRTC] Queued ICE candidate error:', e)
+              )
+            )
+          );
+        })
+        .catch((err) => console.error('[WebRTC] Answer handling error:', err));
     }
 
     function handleIceCandidate({ candidate }) {
       const pc = peerConnectionRef.current;
       if (!pc) return;
+
+      if (!remoteDescSetRef.current) {
+        // Remote description not set yet — queue the candidate
+        iceCandidateQueueRef.current.push(candidate);
+        return;
+      }
 
       pc.addIceCandidate(new RTCIceCandidate(candidate)).catch((err) =>
         console.error('[WebRTC] ICE candidate error:', err)
@@ -192,7 +231,7 @@ export default function useWebRTC(socket, roomId, isInitiator, mode) {
       socket.off('webrtc_ice_candidate', handleIceCandidate);
       cleanup();
     };
-  }, [socket, roomId, isInitiator, mode, cleanup]);
+  }, [socket, roomId, mode, cleanup]);
 
   return {
     localStream,

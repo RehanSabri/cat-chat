@@ -69,13 +69,19 @@ async function leaveQueue(socketId) {
  * Check whether two users share at least one interest tag.
  */
 function hasSharedInterest(interestsA, interestsB) {
-  if (!interestsA || !interestsB) return false;
+  // If either user specified no interests, treat as "match with anyone" → instant pair
+  const aEmpty = !interestsA || !interestsA.trim();
+  const bEmpty = !interestsB || !interestsB.trim();
+  if (aEmpty || bEmpty) return true;
+
+  // Both have interests — check for at least one overlap (case-insensitive)
   const setA = new Set(interestsA.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
   for (const interest of interestsB.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)) {
     if (setA.has(interest)) return true;
   }
   return false;
 }
+
 
 /**
  * Try to pop two connected sockets from the queue and pair them.
@@ -152,9 +158,10 @@ async function tryPair(io, mode, depth = 0) {
     const waitB = Date.now() - parseInt(metaB.joinedAt || '0', 10);
 
     if (waitA < FALLBACK_MS && waitB < FALLBACK_MS) {
-      // Neither has waited long enough — push both back
-      await redis.lpush(queueKey, socketIdB);
-      await redis.lpush(queueKey, socketIdA);
+      // Neither has waited long enough — push both back atomically.
+      // A single multi-arg lpush keeps them adjacent: [socketIdA, socketIdB, ...]
+      // so a concurrent third socket can't wedge between them.
+      await redis.lpush(queueKey, socketIdA, socketIdB);
 
       // ── FIX 2: Schedule a real retry after 5 s ─────────────────────────
       // Without this, two sockets in an empty queue wait forever if no new

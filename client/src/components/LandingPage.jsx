@@ -1,9 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import '../strangest.css';
+
+// Animate an online counter that wobbles slightly to look live
+function useLiveCounter(base = 4217) {
+  const [count, setCount] = useState(base);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCount((c) => {
+        const delta = Math.floor(Math.random() * 7) - 3; // -3 to +3
+        return Math.max(3800, c + delta);
+      });
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
+  return count.toLocaleString();
+}
+
+const MARQUEE_ITEMS = [
+  'Anonymous', 'Instant matching', 'Text & Video', 'No sign up',
+  'Interest tags', '180+ countries',
+  'Anonymous', 'Instant matching', 'Text & Video', 'No sign up',
+  'Interest tags', '180+ countries',
+  'Anonymous', 'Instant matching', 'Text & Video', 'No sign up',
+  'Interest tags', '180+ countries',
+];
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const [interests, setInterests] = useState('');
+  const onlineCount = useLiveCounter(4217);
 
   function handleStart(mode) {
     const tags = interests
@@ -15,109 +41,200 @@ export default function LandingPage() {
     if (tags.length > 0) {
       params.set('interests', tags.join(','));
     }
-
     navigate(`/chat?${params.toString()}`);
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center px-4 py-20">
-        <div className="max-w-2xl w-full text-center space-y-10 animate-fade-in">
-          {/* Logo / Branding */}
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 bg-accent/10 border border-accent/20 rounded-full px-4 py-1.5 mb-6">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-xs font-medium text-accent">Online now — thousands of strangers</span>
-            </div>
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white leading-tight tracking-tight">
-              Talk to strangers.{' '}
-              <span className="text-gradient">Instantly.</span>
-            </h1>
-            <p className="text-lg sm:text-xl text-gray-400 mt-4 max-w-lg mx-auto leading-relaxed">
-              Meet random people around the world via text or video chat. No signup needed.
+    <div className="strangest-root">
+      {/* Google Font */}
+      <link
+        href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;900&display=swap"
+        rel="stylesheet"
+      />
+
+      {/* ── NAV ── */}
+      <nav className="s-nav">
+        <div className="s-logo">strangest.</div>
+        <ul className="s-nav-links">
+          <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('text'); }}>Text Chat</a></li>
+          <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('video'); }}>Video Chat</a></li>
+          <li><a href="#">Safety</a></li>
+          <li><a href="#">About</a></li>
+        </ul>
+        <div className="s-nav-right">
+          <div className="s-nav-pill">
+            <div className="s-live-dot" />
+            {onlineCount} online
+          </div>
+          <button className="s-btn-nav" onClick={() => handleStart('text')}>
+            Start chatting
+          </button>
+        </div>
+      </nav>
+
+      {/* ── HERO ── */}
+      <section className="s-hero">
+        <div className="s-hero-kicker">
+          <div className="s-live-dot" />
+          No account needed — just click and talk
+        </div>
+
+        <h1 className="s-h1">
+          Talk to<br />strangers.<br /><em>Instantly.</em>
+        </h1>
+
+        <p className="s-hero-sub">
+          Meet real people around the world via text or video chat. Random. Anonymous. Free. Right now.
+        </p>
+
+        <div className="s-interest-area">
+          <div className="s-interest-label">Match by interest (optional)</div>
+          <input
+            className="s-interest-input"
+            type="text"
+            placeholder="e.g. music, gaming, travel, coding…"
+            value={interests}
+            onChange={(e) => setInterests(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleStart('text')}
+            id="interests-input"
+          />
+        </div>
+
+        <div className="s-cta-row">
+          <button className="s-btn s-btn-fill" onClick={() => handleStart('text')} id="text-chat-btn">
+            <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Text Chat
+          </button>
+          <button className="s-btn s-btn-outline" onClick={() => handleStart('video')} id="video-chat-btn">
+            <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+            </svg>
+            Video Chat
+          </button>
+        </div>
+
+        <div className="s-stats-row">
+          <div className="s-stat">
+            <span className="s-stat-n">2M+</span>
+            <span className="s-stat-l">Daily users</span>
+          </div>
+          <div className="s-stat">
+            <span className="s-stat-n">180+</span>
+            <span className="s-stat-l">Countries</span>
+          </div>
+          <div className="s-stat">
+            <span className="s-stat-n">&lt;3s</span>
+            <span className="s-stat-l">Match time</span>
+          </div>
+          <div className="s-stat">
+            <span className="s-stat-n">0</span>
+            <span className="s-stat-l">Sign-ups</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── MARQUEE ── */}
+      <div className="s-marquee-wrap">
+        <div className="s-marquee-track">
+          {MARQUEE_ITEMS.map((item, i) => (
+            <span className="s-marquee-item" key={i}>
+              {item} <span className="s-marquee-dot" />
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ── FEATURES GRID ── */}
+      <div className="s-features">
+
+        {/* Wide card with chat preview */}
+        <div className="s-feat-card wide">
+          <div>
+            <div className="s-feat-tag">Live right now</div>
+            <h2 className="s-feat-title">Jump in. Meet someone real.</h2>
+            <p className="s-feat-body">
+              No profiles, no history. Every chat is a blank slate. Skip whenever you want — thousands of new people are waiting.
             </p>
-          </div>
-
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
+              className="s-btn s-btn-fill"
+              style={{ marginTop: '1.5rem', fontSize: '0.9rem', padding: '11px 22px' }}
               onClick={() => handleStart('text')}
-              className="btn-primary w-full sm:w-auto text-lg px-10 py-4 flex items-center justify-center gap-3"
-              id="text-chat-btn"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              Text Chat
-            </button>
-
-            <button
-              onClick={() => handleStart('video')}
-              className="w-full sm:w-auto text-lg px-10 py-4 flex items-center justify-center gap-3 bg-gradient-to-r from-accent to-purple-500 hover:from-accent-hover hover:to-purple-600 text-white font-semibold rounded-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-accent/25"
-              id="video-chat-btn"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              Video Chat
+              Start talking →
             </button>
           </div>
-
-          {/* Interests Input */}
-          <div className="max-w-md mx-auto">
-            <label className="block text-sm text-gray-500 mb-2 text-left">
-              Add interests (optional) — get matched with similar people
-            </label>
-            <input
-              type="text"
-              value={interests}
-              onChange={(e) => setInterests(e.target.value)}
-              placeholder="e.g. music, gaming, travel"
-              className="w-full bg-dark-card border border-dark-border rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent transition-colors"
-              id="interests-input"
-            />
-          </div>
-
-          {/* Stats */}
-          <div className="flex items-center justify-center gap-8 pt-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">10K+</p>
-              <p className="text-xs text-gray-500">Users online</p>
+          <div className="s-mini-chat">
+            <div className="s-mini-chat-header">
+              <div className="s-mini-avatar">?</div>
+              <div>
+                <div>Stranger #4,217</div>
+                <div className="s-mini-status">● Connected · Brazil</div>
+              </div>
             </div>
-            <div className="w-px h-10 bg-dark-border"></div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">1M+</p>
-              <p className="text-xs text-gray-500">Conversations daily</p>
-            </div>
-            <div className="w-px h-10 bg-dark-border"></div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">190+</p>
-              <p className="text-xs text-gray-500">Countries</p>
+            <div className="s-mini-msg s-mini-them">Hey! Where are you from? 👋</div>
+            <div className="s-mini-msg s-mini-me">India! You into music?</div>
+            <div className="s-mini-msg s-mini-them">Yes! Big into hip-hop lately</div>
+            <div className="s-typing-row">
+              <span /><span /><span />
             </div>
           </div>
         </div>
-      </main>
 
-      {/* Footer */}
-      <footer className="border-t border-dark-border py-6 px-4">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-gray-600">© 2026 TextChat. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <Link to="/terms" className="text-xs text-gray-500 hover:text-accent transition-colors">
-              Terms of Service
-            </Link>
-            <Link to="/privacy" className="text-xs text-gray-500 hover:text-accent transition-colors">
-              Privacy Policy
-            </Link>
-            <a
-              href="mailto:bugs@textchat.com"
-              className="text-xs text-gray-500 hover:text-accent transition-colors"
-            >
-              Report a Bug
-            </a>
-          </div>
+        {/* Anonymous card */}
+        <div className="s-feat-card">
+          <div className="s-feat-tag">Privacy first</div>
+          <h2 className="s-feat-title">Completely anonymous</h2>
+          <p className="s-feat-body">
+            No name, no email, no account. Your conversations disappear when you close the tab. Nothing is stored.
+          </p>
+          <ul className="s-check-list">
+            <li>Zero data collected</li>
+            <li>No chat history saved</li>
+            <li>Close tab = chat gone</li>
+          </ul>
         </div>
+
+        {/* Match card */}
+        <div className="s-feat-card">
+          <div className="s-feat-tag">Smart matching</div>
+          <span className="s-pink-num">3 sec</span>
+          <h2 className="s-feat-title">Find your people, fast</h2>
+          <p className="s-feat-body">
+            Tag your interests and get matched with people who actually get you — in under 3 seconds, any time of day.
+          </p>
+        </div>
+
+      </div>
+
+      {/* ── CTA BOX ── */}
+      <div className="s-cta-section">
+        <div className="s-cta-box">
+          <h2>Someone out there<br />wants to talk to you.</h2>
+          <p>{onlineCount} people are online right now. One click and you're connected.</p>
+          <button
+            className="s-btn s-btn-white"
+            style={{ fontSize: '1rem', padding: '14px 32px' }}
+            onClick={() => handleStart('text')}
+          >
+            Start chatting — it's free
+          </button>
+        </div>
+      </div>
+
+      {/* ── FOOTER ── */}
+      <footer className="s-footer">
+        <div className="s-footer-logo">strangest.</div>
+        <ul className="s-footer-links">
+          <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('text'); }}>Text Chat</a></li>
+          <li><a href="#" onClick={(e) => { e.preventDefault(); handleStart('video'); }}>Video Chat</a></li>
+          <li><a href="#">Safety</a></li>
+          <li><Link to="/privacy">Privacy Policy</Link></li>
+          <li><Link to="/terms">Terms</Link></li>
+        </ul>
+        <div className="s-footer-copy">© 2025 Strangest, Inc.</div>
       </footer>
     </div>
   );
