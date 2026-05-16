@@ -13,10 +13,18 @@ const socket = io(SERVER_URL, {
 
 socket.on('connect', () => {
   console.log('[Socket] Connected:', socket.id);
+
+  // If we just reconnected after a drop, try to restore the previous session
+  const prevId = sessionStorage.getItem('prev_socket_id');
+  if (prevId && prevId !== socket.id) {
+    socket.emit('reconnect_restore', { prevSocketId: prevId });
+  }
+  sessionStorage.setItem('prev_socket_id', socket.id);
 });
 
 socket.on('disconnect', (reason) => {
   console.log('[Socket] Disconnected:', reason);
+  // Keep prev_socket_id so the reconnect handler can reference it
 });
 
 socket.on('connect_error', (error) => {

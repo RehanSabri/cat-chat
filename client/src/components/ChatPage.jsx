@@ -32,6 +32,10 @@ function fmt(d) {
   return String(Math.floor(d / 60)).padStart(2, '0') + ':' + String(d % 60).padStart(2, '0');
 }
 
+/** Generate a short unique ID for each sent message (for delivery receipts). */
+let _msgSeq = 0;
+function newMsgId() { return `m-${Date.now()}-${++_msgSeq}`; }
+
 const REPORT_REASONS = ['Spam', 'Inappropriate content', 'Harassment', 'Underage user', 'Other'];
 
 // ── InlineReportModal ─────────────────────────────────────────────────────────
@@ -158,7 +162,10 @@ export default function ChatPage() {
   const [isTyping,     setIsTyping]     = useState(false);
   const [reportOpen,   setReportOpen]   = useState(false);
   const [isInitiator,  setIsInitiator]  = useState(false); // mirrors isInitiatorRef for reactive prop
-  const typingTimerRef = useRef(null);
+  const [deliveredIds, setDeliveredIds] = useState(new Set()); // msgIds confirmed delivered
+  const [reconnectState, setReconnectState] = useState('connected'); // 'connected'|'reconnecting'|'failed'
+  const typingTimerRef = useRef(null);   // auto-stop typing after 3 s of silence
+  const isTypingRef    = useRef(false);  // track whether we already sent typing_start
 
   const onlineCount = useLiveCounter(4217);
 
@@ -205,17 +212,31 @@ export default function ChatPage() {
       setStatus('chatting');
       setSeconds(0);
       setMsgCount(0);
+      setDeliveredIds(new Set());
       addMessage({ sender: 'system', text: 'You are now chatting with a stranger. Say hi!' });
     }
 
     function handleStrangerMessage({ text }) {
       addMessage({ sender: 'stranger', text });
       setMsgCount((c) => c + 1);
+    }
 
-      // show typing for 1.2 s after each message (mimic "still there")
+    // ── Real typing indicator ────────────────────────────────────────────────
+    function handleStrangerTyping() {
       setIsTyping(true);
+      // Auto-clear after 4 s in case typing_stop is missed (e.g. tab close)
       clearTimeout(typingTimerRef.current);
-      typingTimerRef.current = setTimeout(() => setIsTyping(false), 1200);
+      typingTimerRef.current = setTimeout(() => setIsTyping(false), 4000);
+    }
+    function handleStrangerStoppedTyping() {
+      clearTimeout(typingTimerRef.current);
+      setIsTyping(false);
+    }
+
+    // ── Message delivery receipt ─────────────────────────────────────────────
+    function handleMessageDelivered({ msgId }) {
+      if (!msgId) return;
+      setDeliveredIds((prev) => new Set([...prev, msgId]));
     }
 
     function handleStrangerDisconnected() {
@@ -230,18 +251,41 @@ export default function ChatPage() {
       addMessage({ sender: 'system', text: 'Stranger has left the chat.' });
     }
 
-    socket.on('matched',               handleMatched);
-    socket.on('stranger_message',      handleStrangerMessage);
-    socket.on('stranger_disconnected', handleStrangerDisconnected);
-    socket.on('stranger_left',         handleStrangerLeft);
+    socket.on('matched',                 handleMatched);
+    socket.on('stranger_message',        handleStrangerMessage);
+    socket.on('stranger_typing',         handleStrangerTyping);
+    socket.on('stranger_stopped_typing', handleStrangerStoppedTyping);
+    socket.on('message_delivered',       handleMessageDelivered);
+    socket.on('stranger_disconnected',   handleStrangerDisconnected);
+    socket.on('stranger_left',           handleStrangerLeft);
 
     return () => {
-      socket.off('matched',               handleMatched);
-      socket.off('stranger_message',      handleStrangerMessage);
-      socket.off('stranger_disconnected', handleStrangerDisconnected);
-      socket.off('stranger_left',         handleStrangerLeft);
+      socket.off('matched',                 handleMatched);
+      socket.off('stranger_message',        handleStrangerMessage);
+      socket.off('stranger_typing',         handleStrangerTyping);
+      socket.off('stranger_stopped_typing', handleStrangerStoppedTyping);
+      socket.off('message_delivered',       handleMessageDelivered);
+      socket.off('stranger_disconnected',   handleStrangerDisconnected);
+      socket.off('stranger_left',           handleStrangerLeft);
     };
   }, [setRoom, setStatus, addMessage]);
+
+  // ── Reconnection state ─────────────────────────────────────────────────────
+  useEffect(() => {
+    function onReconnecting() { setReconnectState('reconnecting'); }
+    function onReconnect()    { setReconnectState('connected'); }
+    function onReconnectFailed() { setReconnectState('failed'); }
+
+    socket.io.on('reconnect_attempt', onReconnecting);
+    socket.io.on('reconnect',         onReconnect);
+    socket.io.on('reconnect_failed',  onReconnectFailed);
+
+    return () => {
+      socket.io.off('reconnect_attempt', onReconnecting);
+      socket.io.off('reconnect',         onReconnect);
+      socket.io.off('reconnect_failed',  onReconnectFailed);
+    };
+  }, []);
 
   // ── WebRTC (video mode) ────────────────────────────────────────────────────
   const { localStream, remoteStream, cameraEnabled, micEnabled, mediaError, toggleCamera, toggleMic, cleanup: cleanupWebRTC } = useWebRTC(socket, roomId, isInitiator, mode);
@@ -260,10 +304,17 @@ export default function ChatPage() {
   const handleSend = useCallback(() => {
     const text = inputText.trim();
     if (!text || chatStatus !== 'chatting') return;
-    socket.emit('send_message', { text });
-    addMessage({ sender: 'me', text });
+    const msgId = newMsgId();
+    socket.emit('send_message', { text, msgId });
+    addMessage({ sender: 'me', text, msgId });
     setMsgCount((c) => c + 1);
     setInputText('');
+    // Stop typing indicator on send
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      socket.emit('typing_stop');
+    }
+    clearTimeout(typingTimerRef.current);
     if (inputRef.current) { inputRef.current.style.height = 'auto'; }
   }, [inputText, chatStatus, addMessage]);
 
@@ -276,18 +327,38 @@ export default function ChatPage() {
     const el = e.target;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  }, []);
+
+    // Real typing indicator — emit typing_start once per burst, auto-stop after 3s silence
+    if (chatStatus === 'chatting') {
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        socket.emit('typing_start');
+      }
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = setTimeout(() => {
+        isTypingRef.current = false;
+        socket.emit('typing_stop');
+      }, 3000);
+    }
+  }, [chatStatus]);
 
   const handleNext = useCallback(() => {
     cleanupWebRTC();
     clearMessages();
     setIsTyping(false);
+    setDeliveredIds(new Set());
     setStatus('connecting');
     setRoom(null);
     setSeconds(0);
     setMsgCount(0);
     isInitiatorRef.current = false;
     setIsInitiator(false);
+    // Stop any pending typing emit
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      socket.emit('typing_stop');
+    }
+    clearTimeout(typingTimerRef.current);
     socket.emit('next');
   }, [cleanupWebRTC, clearMessages, setStatus, setRoom]);
 
@@ -310,6 +381,7 @@ export default function ChatPage() {
     cleanupWebRTC();
     clearMessages();
     setIsTyping(false);
+    setDeliveredIds(new Set());
     setStatus('connecting');
     setRoom(null);
     setSeconds(0);
@@ -334,6 +406,17 @@ export default function ChatPage() {
         href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;900&display=swap"
         rel="stylesheet"
       />
+
+      {/* ── RECONNECTION BANNER ── */}
+      {reconnectState !== 'connected' && (
+        <div className={`sc-reconnect-banner ${reconnectState === 'failed' ? 'sc-reconnect-failed' : ''}`}>
+          {reconnectState === 'reconnecting' ? (
+            <><span className="sc-reconnect-spinner" /> Reconnecting…</>
+          ) : (
+            <>Connection lost. <button onClick={() => { socket.connect(); setReconnectState('reconnecting'); }}>Retry</button></>
+          )}
+        </div>
+      )}
 
       {/* ── TOPBAR ── */}
       <div className="sc-topbar">
@@ -381,12 +464,18 @@ export default function ChatPage() {
                   return <div key={msg.id} className="sc-sys-msg">{msg.text}</div>;
                 }
                 const isMe = msg.sender === 'me';
+                const delivered = isMe && msg.msgId && deliveredIds.has(msg.msgId);
                 return (
                   <div key={msg.id} className={`sc-msg-group ${isMe ? 'sc-me' : 'sc-them'}`}>
                     <div className="sc-msg-label">{isMe ? 'You' : 'Stranger'}</div>
                     <div className="sc-bubble">{msg.text}</div>
                     <div className="sc-bubble-time">
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {isMe && (
+                        <span className={`sc-delivered ${delivered ? 'sc-delivered-ok' : ''}`}>
+                          {delivered ? '✓ Delivered' : '✓'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -546,12 +635,18 @@ export default function ChatPage() {
                   return <div key={msg.id} className="sc-sys-msg">{msg.text}</div>;
                 }
                 const isMe = msg.sender === 'me';
+                const delivered = isMe && msg.msgId && deliveredIds.has(msg.msgId);
                 return (
                   <div key={msg.id} className={`sc-msg-group ${isMe ? 'sc-me' : 'sc-them'}`}>
                     <div className="sc-msg-label">{isMe ? 'You' : 'Stranger'}</div>
                     <div className="sc-bubble">{msg.text}</div>
                     <div className="sc-bubble-time">
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {isMe && (
+                        <span className={`sc-delivered ${delivered ? 'sc-delivered-ok' : ''}`}>
+                          {delivered ? '✓ Delivered' : '✓'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );

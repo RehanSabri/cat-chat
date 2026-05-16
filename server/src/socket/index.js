@@ -6,16 +6,30 @@ const { forwardSignal } = require('./relay');
 const { createRateLimiter } = require('../middleware/rateLimiter');
 const { query } = require('../db/postgres');
 const logger = require('../utils/logger');
+const BadWords = require('bad-words');
+
+// Profanity filter (singleton — reused across all connections)
+const profanityFilter = new BadWords();
+
+// Grace-period map: socketId → timeoutId
+// Keeps a pending disconnect timer so a brief reconnect can cancel it.
+const pendingDisconnects = new Map();
 
 /**
  * Sanitize a chat message: strip HTML tags, trim, cap at 500 chars.
  */
 function sanitizeText(raw) {
   if (typeof raw !== 'string') return '';
-  return raw
+  const stripped = raw
     .replace(/<[^>]*>/g, '')  // strip HTML tags
     .trim()
     .slice(0, 500);
+  // Replace profanity with asterisks (non-blocking — falls back on error)
+  try {
+    return profanityFilter.clean(stripped);
+  } catch (_) {
+    return stripped;
+  }
 }
 
 /**
@@ -110,7 +124,7 @@ function registerHandlers(io, socket) {
   });
 
   // ─── send_message ──────────────────────────────────────────────────────────
-  socket.on('send_message', async ({ text } = {}) => {
+  socket.on('send_message', async ({ text, msgId } = {}) => {
     try {
       if (!rateLimiter.check(socket, 'send_message')) return;
 
@@ -126,9 +140,38 @@ function registerHandlers(io, socket) {
       const partnerSocket = io.sockets.sockets.get(partnerId);
       if (partnerSocket) {
         partnerSocket.emit('stranger_message', { text: sanitized });
+        // Acknowledge delivery back to the sender
+        socket.emit('message_delivered', { msgId });
       }
     } catch (err) {
       logger.error(`[send_message] socket=${socket.id}:`, err.message);
+    }
+  });
+
+  // ─── typing indicators ─────────────────────────────────────────────────────
+  socket.on('typing_start', async () => {
+    try {
+      const meta = await getSocketMeta(socket.id);
+      if (!meta?.roomId) return;
+      const partnerId = await getPartner(meta.roomId, socket.id);
+      if (!partnerId) return;
+      const partnerSocket = io.sockets.sockets.get(partnerId);
+      if (partnerSocket) partnerSocket.emit('stranger_typing');
+    } catch (err) {
+      logger.error(`[typing_start] socket=${socket.id}:`, err.message);
+    }
+  });
+
+  socket.on('typing_stop', async () => {
+    try {
+      const meta = await getSocketMeta(socket.id);
+      if (!meta?.roomId) return;
+      const partnerId = await getPartner(meta.roomId, socket.id);
+      if (!partnerId) return;
+      const partnerSocket = io.sockets.sockets.get(partnerId);
+      if (partnerSocket) partnerSocket.emit('stranger_stopped_typing');
+    } catch (err) {
+      logger.error(`[typing_stop] socket=${socket.id}:`, err.message);
     }
   });
 
@@ -268,12 +311,42 @@ function registerHandlers(io, socket) {
   });
 
   // ─── disconnect ────────────────────────────────────────────────────────────
+  // Grace-period: wait 8 s before cleaning up so a transient network drop
+  // (e.g. phone switching Wi-Fi → cellular) can reconnect without losing the chat.
   socket.on('disconnect', async (reason) => {
+    logger.info(`Socket ${socket.id} disconnected — reason: ${reason}`);
+
+    // Transport-level drops get a grace period; intentional closes do not.
+    const isTransportDrop = reason === 'transport close' || reason === 'transport error' || reason === 'ping timeout';
+    const GRACE_MS = isTransportDrop ? 8000 : 0;
+
+    const timerId = setTimeout(async () => {
+      pendingDisconnects.delete(socket.id);
+      try {
+        await cleanupSocket(io, socket.id, false);
+      } catch (err) {
+        logger.error(`[disconnect] socket=${socket.id}:`, err.message);
+      }
+    }, GRACE_MS);
+
+    pendingDisconnects.set(socket.id, timerId);
+  });
+
+  // ─── reconnect_restore ─────────────────────────────────────────────────────
+  // When a socket reconnects within the grace period, cancel the pending cleanup
+  // and tell the client they are still in the room.
+  socket.on('reconnect_restore', async ({ prevSocketId } = {}) => {
     try {
-      logger.info(`Socket ${socket.id} disconnected — reason: ${reason}`);
-      await cleanupSocket(io, socket.id, false);
+      if (!prevSocketId) return;
+      const timerId = pendingDisconnects.get(prevSocketId);
+      if (timerId !== undefined) {
+        clearTimeout(timerId);
+        pendingDisconnects.delete(prevSocketId);
+        logger.info(`Grace-period cancelled: prevSocket=${prevSocketId} newSocket=${socket.id}`);
+        socket.emit('session_restored');
+      }
     } catch (err) {
-      logger.error(`[disconnect] socket=${socket.id}:`, err.message);
+      logger.error(`[reconnect_restore] socket=${socket.id}:`, err.message);
     }
   });
 }
